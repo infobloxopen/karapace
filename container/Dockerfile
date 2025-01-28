@@ -1,5 +1,5 @@
 # Current versions of avro and zstandard don't yet have wheels for 3.11.
-FROM python:3.10.11-bullseye AS builder
+FROM python:3.12-bullseye AS builder
 
 ARG KARAPACE_VERSION
 
@@ -9,7 +9,7 @@ ENV PATH="/venv/bin:$PATH"
 ENV PIP_REQUIRE_VIRTUALENV=true
 
 # Install golang needed by extensions
-ENV GO_VERSION=1.21.0
+ENV GO_VERSION=1.23.4
 ENV PATH="/usr/local/go/bin:${PATH}"
 RUN wget --progress=dot:giga "https://go.dev/dl/go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz" \
  && tar -C /usr/local -xzf "go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz" \
@@ -36,20 +36,32 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     SETUPTOOLS_SCM_PRETEND_VERSION=$PRETEND_VERSION python3 -m pip install --no-deps .
 
 # Karapace image, i.e. production.
-FROM python:3.10.11-slim-bullseye AS karapace
+FROM python:3.12-alpine AS karapace
+
+# Need to be root to install packages.
+USER 0
 
 # Setup user and directories.
 # https://docs.redhat.com/en/documentation/openshift_container_platform/4.17/html/images/creating-images#use-uid_create-images
-RUN useradd --system --gid 0 karapace \
+RUN adduser -S -u 1000 -G root karapace \
  && mkdir /opt/karapace /opt/karapace/runtime /var/log/karapace \
  && chgrp -R 0  /opt/karapace /opt/karapace/runtime /var/log/karapace \
  && chmod -R g+rwX /opt/karapace
 
 # Install protobuf compiler.
-ARG PROTOBUF_COMPILER_VERSION="3.12.4-1+deb11u1"
-RUN apt-get update \
- && apt-get install --assume-yes --no-install-recommends \
-    protobuf-compiler=$PROTOBUF_COMPILER_VERSION \
+ARG PROTOBUF_COMPILER_VERSION="3.12.4"
+RUN apk update \
+ && apk add \
+    protobuf-dev \
+    librdkafka \
+    librdkafka-dev \
+    libc6-compat \
+    libstdc++ \
+    gcompat \
+    gcc \
+    musl-dev \
+    && apk add --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community py3-sentry-sdk \
+    && apk add --repository=https://dl-cdn.alpinelinux.org/alpine/edge/testing py3-confluent-kafka \
  && rm -rf /var/lib/apt/lists/*
 
 # Copy virtualenv from builder and activate it.
