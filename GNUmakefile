@@ -3,7 +3,7 @@ SHELL := /usr/bin/env bash
 VENV_DIR ?= $(CURDIR)/venv
 PIP      ?= pip3 --disable-pip-version-check --no-input --require-virtualenv
 PYTHON   ?= python3
-PYTHON_VERSION ?= 3.9
+PYTHON_VERSION ?= 3.10
 
 define PIN_VERSIONS_COMMAND
 pip install pip-tools && \
@@ -102,3 +102,31 @@ schema:
 .PHONY: pin-requirements
 pin-requirements:
 	docker run -e CUSTOM_COMPILE_COMMAND='make pin-requirements' -it -v .:/karapace --security-opt label=disable python:$(PYTHON_VERSION)-bullseye /bin/bash -c "$(PIN_VERSIONS_COMMAND)"
+
+
+TAG := $(shell git describe --always --long --tags || echo pre-commit)
+KARAPACE_VERSION := $(shell git describe --tags | cut -d '-' -f -2 | sed 's/-/.dev/g')
+
+.PHONY: docker-build
+docker-build:
+	docker build -f container/Dockerfile  . -t infoblox/karapace-schema-registry:$(TAG)
+
+.PHONY: docker-test
+docker-test:
+	docker run -it --entrypoint sh \
+	--env KARAPACE_REGISTRY_ADVERTISED_HOSTNAME=schema-reg \
+	--env KARAPACE_REGISTRY_BOOTSTRAP_URI=localhost \
+	--env KARAPACE_REGISTRY_HOST=localhost \
+	--env KARAPACE_REGISTRY_PORT=8080 \
+	--env KARAPACE_REGISTRY_CLIENT_ID=1 \
+	--env KARAPACE_REGISTRY_GROUP_ID=1 \
+	--env KARAPACE_REGISTRY_MASTER_ELIGIBILITY=1 \
+	--env KARAPACE_REGISTRY_MASTER_ELIGIBITY=1 \
+	--env KARAPACE_REGISTRY_TOPIC_NAME=1 \
+	--env KARAPACE_REGISTRY_COMPATIBILITY=1 \
+	--env KARAPACE_REGISTRY_LOG_LEVEL=1 \
+	infoblox/karapace-schema-registry:$(TAG) /opt/karapace/start.sh registry
+
+.PHONY: image/show
+image/show:
+	@echo infoblox/karapace-schema-registry:$(TAG)
