@@ -79,8 +79,6 @@ RUN tdnf -y update && tdnf -y install \
     binutils \
     && tdnf clean all
 
-RUN ulimit -c unlimited
-
 # Need to be root to install packages.
 USER 0
 
