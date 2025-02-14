@@ -112,7 +112,5 @@ COPY ./container/healthcheck.py /opt/karapace
 WORKDIR /opt/karapace
 USER karapace
 
-ENV KARAPACE_REGISTRY_LOG_LEVEL=DEBUG
-
 HEALTHCHECK --interval=10s --timeout=30s --retries=3 --start-period=60s \
     CMD python3 healthcheck.py http://localhost:$KARAPACE_PORT/_health || exit 1
