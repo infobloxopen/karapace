@@ -11,7 +11,8 @@ pipeline {
     checkoutToSubdirectory('src/github.com/infobloxopen/karapace')
   }
   environment {
-    PROJECT     = "src/github.com/infobloxopen/karapace"
+    PROJECT         = "src/github.com/infobloxopen/karapace"
+    DOCKER_BUILDKIT = "1"
   }
   stages {
     stage("Setup") {
