@@ -7,6 +7,12 @@ pipeline {
   tools {
     go "Go 1.22.4"
   }
+  options {
+    checkoutToSubdirectory('src/github.com/infobloxopen/karapace')
+  }
+  environment {
+    PROJECT     = "src/github.com/infobloxopen/karapace"
+  }
   stages {
     stage("Setup") {
       steps {
