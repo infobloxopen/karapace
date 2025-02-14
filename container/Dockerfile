@@ -29,6 +29,7 @@ ENV GO_VERSION=1.23.4
 ENV PATH="/usr/local/go/bin:${PATH}"
 RUN ARCH=$(uname -m) \
  && [ "$ARCH" = "aarch64" ] && ARCH="arm64" || true \
+ && [ "$ARCH" = "x86_64" ] && ARCH="amd64" || true \
  && wget "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
  && tar -C /usr/local -xzf "go${GO_VERSION}.linux-${ARCH}.tar.gz" \
  && rm "go${GO_VERSION}.linux-${ARCH}.tar.gz"
