@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -Eeuo pipefail
+#!/bin/dash
+set -e
 
 # Configuration is done using environment variables. The environment variable
 # names are the same as the configuration keys, all letters in caps, and always

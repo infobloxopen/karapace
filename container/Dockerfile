@@ -1,19 +1,47 @@
-# Current versions of avro and zstandard don't yet have wheels for 3.11.
-FROM python:3.12-bullseye AS builder
+# Use Photon OS as the base image
+FROM photon:latest AS builder
 
 ARG KARAPACE_VERSION
+
+# Install Python and other dependencies
+RUN tdnf -y update && tdnf -y install \
+    python3 \
+    python3-virtualenv \
+    python3-pip \
+    wget \
+    gcc \
+    make \
+    openssl-devel \
+    cyrus-sasl-devel \
+    diffutils \
+    tar \
+    glibc-devel \
+    linux-api-headers \
+    binutils
 
 # Create, activate, and enforce usage of virtualenv.
 RUN python3 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 ENV PIP_REQUIRE_VIRTUALENV=true
 
-# Install golang needed by extensions
+# Install Go
 ENV GO_VERSION=1.23.4
 ENV PATH="/usr/local/go/bin:${PATH}"
-RUN wget --progress=dot:giga "https://go.dev/dl/go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz" \
- && tar -C /usr/local -xzf "go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz" \
- && rm "go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz"
+RUN ARCH=$(uname -m) \
+ && [ "$ARCH" = "aarch64" ] && ARCH="arm64" || true \
+ && wget "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
+ && tar -C /usr/local -xzf "go${GO_VERSION}.linux-${ARCH}.tar.gz" \
+ && rm "go${GO_VERSION}.linux-${ARCH}.tar.gz"
+
+# Install librdkafka from source
+RUN wget https://github.com/edenhill/librdkafka/archive/refs/tags/v2.8.0.tar.gz \
+ && tar -xzf v2.8.0.tar.gz \
+ && cd librdkafka-2.8.0 \
+ && ./configure \
+ && make \
+ && make install \
+ && cd .. \
+ && rm -rf librdkafka-2.8.0 v2.8.0.tar.gz
 
 # Copy the requirements.txt and install dependencies in venv. Using a separate
 # command to use layer caching.
@@ -36,46 +64,55 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     SETUPTOOLS_SCM_PRETEND_VERSION=$PRETEND_VERSION python3 -m pip install --no-deps .
 
 # Karapace image, i.e. production.
-FROM python:3.12-alpine AS karapace
+FROM photon:latest AS karapace
+
+# Install Python 3 and other dependencies
+RUN tdnf -y update && tdnf -y install \
+    python3 \
+    python3-virtualenv \
+    python3-pip \
+    gcc \
+    gdb \
+    shadow \
+    glibc-devel \
+    linux-api-headers \
+    binutils \
+    && tdnf clean all
+
+RUN ulimit -c unlimited
 
 # Need to be root to install packages.
 USER 0
 
 # Setup user and directories.
 # https://docs.redhat.com/en/documentation/openshift_container_platform/4.17/html/images/creating-images#use-uid_create-images
-RUN adduser -S -u 1000 -G root karapace \
- && mkdir /opt/karapace /opt/karapace/runtime /var/log/karapace \
- && chgrp -R 0  /opt/karapace /opt/karapace/runtime /var/log/karapace \
+RUN useradd --uid 1001 --gid root karapace \
+ && mkdir -p /opt/karapace /opt/karapace/runtime /var/log/karapace \
+ && chgrp -R 0 /opt/karapace /opt/karapace/runtime /var/log/karapace \
  && chmod -R g+rwX /opt/karapace
 
 # Install protobuf compiler.
 ARG PROTOBUF_COMPILER_VERSION="3.12.4"
-RUN apk update \
- && apk add \
-    protobuf-dev \
-    librdkafka \
-    librdkafka-dev \
-    libc6-compat \
-    libstdc++ \
-    gcompat \
+RUN tdnf -y update \
+ && tdnf -y install \
+    protobuf-c \
     gcc \
-    musl-dev \
-    && apk add --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community py3-sentry-sdk \
-    && apk add --repository=https://dl-cdn.alpinelinux.org/alpine/edge/testing py3-confluent-kafka \
- && rm -rf /var/lib/apt/lists/*
+    && tdnf clean all
 
 # Copy virtualenv from builder and activate it.
 COPY --from=builder /venv /venv
 ENV PATH="/venv/bin:$PATH"
 
 COPY ./container/start.sh /opt/karapace
-RUN chmod 550 /opt/karapace/start.sh \
+RUN chmod 777 /opt/karapace/start.sh \
  && chgrp -R 0  /opt/karapace/start.sh
 
 COPY ./container/healthcheck.py /opt/karapace
 
 WORKDIR /opt/karapace
 USER karapace
+
+ENV KARAPACE_REGISTRY_LOG_LEVEL=DEBUG
 
 HEALTHCHECK --interval=10s --timeout=30s --retries=3 --start-period=60s \
     CMD python3 healthcheck.py http://localhost:$KARAPACE_PORT/_health || exit 1
