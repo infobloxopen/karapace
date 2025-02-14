@@ -86,7 +86,7 @@ USER 0
 
 # Setup user and directories.
 # https://docs.redhat.com/en/documentation/openshift_container_platform/4.17/html/images/creating-images#use-uid_create-images
-RUN useradd --uid 1001 --gid root karapace \
+RUN useradd --uid 1000 --gid root karapace \
  && mkdir -p /opt/karapace /opt/karapace/runtime /var/log/karapace \
  && chgrp -R 0 /opt/karapace /opt/karapace/runtime /var/log/karapace \
  && chmod -R g+rwX /opt/karapace
@@ -104,7 +104,7 @@ COPY --from=builder /venv /venv
 ENV PATH="/venv/bin:$PATH"
 
 COPY ./container/start.sh /opt/karapace
-RUN chmod 777 /opt/karapace/start.sh \
+RUN chmod 550 /opt/karapace/start.sh \
  && chgrp -R 0  /opt/karapace/start.sh
 
 COPY ./container/healthcheck.py /opt/karapace
