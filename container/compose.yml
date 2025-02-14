@@ -55,7 +55,6 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
 
   karapace-registry:
-    #image: ghcr.io/aiven-open/karapace:develop
     image: infoblox/karapace-schema-registry:de260d0
     build:
       context: ..
