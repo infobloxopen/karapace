@@ -25,7 +25,7 @@ ENV PATH="/venv/bin:$PATH"
 ENV PIP_REQUIRE_VIRTUALENV=true
 
 # Install Go
-ENV GO_VERSION=1.23.4
+ENV GO_VERSION=1.23.8
 ENV PATH="/usr/local/go/bin:${PATH}"
 RUN ARCH=$(uname -m) \
  && [ "$ARCH" = "aarch64" ] && ARCH="arm64" || true \
