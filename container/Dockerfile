@@ -9,7 +9,7 @@ ENV PATH="/venv/bin:$PATH"
 ENV PIP_REQUIRE_VIRTUALENV=true
 
 # Install golang needed by extensions
-ENV GO_VERSION=1.21.0
+ENV GO_VERSION=1.23.8
 ENV PATH="/usr/local/go/bin:${PATH}"
 RUN wget --progress=dot:giga "https://go.dev/dl/go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz" \
  && tar -C /usr/local -xzf "go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz" \
