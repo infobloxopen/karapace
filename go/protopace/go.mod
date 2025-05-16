@@ -1,8 +1,8 @@
 module github.com/Aiven-Open/karapace/go/protopace
 
-go 1.21.0
+go 1.23.8
 
-toolchain go1.21.10
+toolchain go1.23.8
 
 replace github.com/bufbuild/buf => github.com/Aiven-Open/buf v0.0.0-20240829124012-099cfb8b4b31
 
