@@ -1,8 +1,11 @@
-Quickstart examples
-===================
+Api References
+==============
 
-Schema Hub
-----------
+Schema Registry
+---------------
+
+With mTLS enabled, i.e. by providing the certificates and related environment variables,
+we recommend using the `curl-sr-https` make target provided against the examples below.
 
 To register the first version of a schema under the subject "test" using Avro schema::
 
@@ -83,8 +86,8 @@ Change compatibility requirement to FULL for the test-key subject::
   {"compatibility":"FULL"}
 
 
-REST API
----------
+REST Proxy
+----------
 
 List topics::
 

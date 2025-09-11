@@ -4,33 +4,42 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "karapace"
-requires-python = ">= 3.9"
+requires-python = ">= 3.10"
 dynamic = ["version"]
 readme = "README.rst"
 license = {file = "LICENSE"}
 dependencies = [
-  "accept-types < 1",
-  "aiohttp < 4",
+  "accept-types == 0.4.1",
+  "aiohttp == 3.12.14",
   "aiokafka == 0.10.0",
+  "async_lru == 2.0.5",
   "cachetools == 5.3.3",
-  "confluent-kafka == 2.8.0",
-  "isodate < 1",
-  "jsonschema < 5",
-  "lz4",
-  "networkx < 4",
-  "protobuf < 4",
-  "pyjwt >= 2.4.0 , < 3",
-  "python-dateutil < 3",
-  "python-snappy",
-  "rich ~= 13.7.1",
-  "tenacity < 10",
-  "typing-extensions",
-  "ujson < 6",
-  "watchfiles < 1",
-  "xxhash ~= 3.3",
-  "zstandard",
+  "confluent-kafka == 2.10.0",
+  "cryptography == 45.0.5",
+  "fastapi[standard] == 0.115.5",
+  "isodate == 0.7.2",
+  "jsonschema == 4.23.0",
+  "lz4 == 4.4.3",
+  "networkx == 3.4.2",
+  "protobuf == 3.20.3",
+  "pydantic == 2.10.2",
+  "pydantic-settings == 2.8.1",
+  "pyjwt == 2.10.1",
+  "python-dateutil == 2.9.0.post0",
+  "python-snappy == 0.7.3",
+  "rich == 13.7.1",
+  "tenacity == 9.0.0",
+  "typing-extensions == 4.13.2",
+  "ujson == 5.10.0",
+  "watchfiles == 1.0.4",
+  "xxhash == 3.5.0",
+  "zstandard == 0.23.0",
   "prometheus-client == 0.20.0",
-  "yarl == 1.12.1",
+  "yarl == 1.20.0",
+  "opentelemetry-api == 1.27.0",
+  "opentelemetry-sdk == 1.27.0",
+  "opentelemetry-exporter-otlp == 1.27.0",
+  "dependency-injector == 4.43.0",
 
   # Patched dependencies
   #
@@ -49,7 +58,6 @@ classifiers=[
   "Intended Audience :: Information Technology",
   "Intended Audience :: System Administrators",
   "License :: OSI Approved :: Apache Software License",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -58,9 +66,10 @@ classifiers=[
 ]
 
 [project.scripts]
-karapace = "karapace.karapace_all:main"
+karapace = "karapace.__main__:main"
+karapace_rest_proxy = "karapace.kafka_rest_apis.__main__:main"
 karapace_schema_backup = "karapace.backup.cli:main"
-karapace_mkpasswd = "karapace.auth:main"
+karapace_mkpasswd = "karapace.core.auth:main"
 
 [project.urls]
 Homepage = "https://karapace.io"
@@ -74,6 +83,7 @@ ujson = ["ujson"]
 dev = [
   # Developer QoL
   "pdbpp",
+  "ruff",
 
   # testing
   "filelock",
@@ -106,6 +116,5 @@ include-package-data = true
 [tool.setuptools_scm]
 version_file = "src/karapace/version.py"
 
-[tool.black]
-target-version = ["py39"]
+[tool.ruff]
 line-length = 125

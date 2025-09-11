@@ -2,3 +2,11 @@
 branch = true
 relative_files = true
 source = src/karapace
+omit =
+    /venv/*
+    */site-packages/*
+    */distutils/*
+disable_warnings = module-not-measured, no-data-collected, couldnt-parse
+
+[report]
+skip_empty = true

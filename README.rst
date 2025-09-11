@@ -35,6 +35,9 @@ Features
 * Asynchronous architecture based on aiohttp
 * Supports Avro, JSON Schema, and Protobuf
 * Leader/Replica architecture for HA and load balancing
+* Observability with Metrics and OpenTelemetry
+* Based on aiokafka (rdkafka) kafka library mostly
+* Schema registry based on FastApi
 
 Compatibility details
 ---------------------
@@ -83,15 +86,79 @@ what you need to change.
 
 .. _`Here`: https://github.com/Aiven-Open/karapace/blob/master/karapace.config.json
 
-Source install
---------------
+Using Sources
+-------------
 
-Alternatively you can do a source install using::
+Install
+^^^^^^^
+
+You can do a source install using::
 
   pip install .
 
-Quickstart
-==========
+Troubleshooting notes :
+- An updated version of wheel (https://pypi.org/project/wheel/) is required.
+- An updated version of 'go' and 'rust' is required
+- Create and activate virtual environment (venv) to manage dependencies
+
+Run
+^^^
+- Make sure kafka is running.
+
+Start Karapace. This shout start karapace on http://localhost:8081 ::
+
+  $ karapace karapace.config.json
+
+Verify in browser http://localhost:8081/subjects should return an array of subjects if exist or an empty array.
+or with curl ::
+
+  $ curl -X GET http://localhost:8081/subjects
+
+To enable oidc authentication on the karapace, configure oidc jwks url config details ::
+
+   sasl_oauthbearer_jwks_endpoint_url = "",
+   sasl_oauthbearer_expected_issuer = "",
+   sasl_oauthbearer_expected_audience = "",
+   sasl_oauthbearer_sub_claim_name = "sub",
+
+There is a detailed section about OAuth2 authentication for karapace below.
+
+To enable oidc authorization on karapace, configure the below params together with the above ::
+
+   sasl_oauthbearer_authorization_enabled: bool = False
+   sasl_oauthbearer_client_id: str | None = None
+   sasl_oauthbearer_roles_claim_path: str | None = None
+   sasl_oauthbearer_method_roles: dict[str, list[str]] = {"GET": [], "POST": [], "PUT": [], "DELETE": []}
+
+There is a detailed section about OAuth2 authorization for karapace below.
+
+Start Karapace rest proxy. This shout start karapace on http://localhost:8082 ::
+
+    karapace rest-proxy-karapace.config.json
+
+To enable authorization & authentication on the rest proxy, configure 'sasl_mechanism' in the config with values like PLAIN/OAUTHBEARER ::
+
+   sasl_mechanism = "OAUTHBEARER",
+   sasl_oauth_token_provider = token_provider,
+   security_protocol="SASL_SSL",
+   ssl_cafile="ca.pem",
+
+If 'sasl_mechanism' is configured to PLAIN::
+
+    sasl_mechanism = "PLAIN",
+    security_protocol = "SASL_PLAIN",
+    sasl_plain_username = "your_username",
+    sasl_plain_password = "your_password"
+
+There is a detailed section about OAuth2 authentication for rest proxy below.
+
+Verify with list topics::
+
+  $ curl "http://localhost:8082/topics"
+
+
+Schema Registry Api reference
+=============================
 
 To register the first version of a schema under the subject "test" using Avro schema::
 
@@ -171,6 +238,9 @@ Change compatibility requirement to FULL for the test-key subject::
     --data '{"compatibility": "FULL"}' http://localhost:8081/config/test-key
   {"compatibility":"FULL"}
 
+Schema Registry Rest proxy Api reference
+========================================
+
 List topics::
 
   $ curl "http://localhost:8082/topics"
@@ -185,18 +255,18 @@ Produce a message backed up by schema registry::
     '{"value_schema": "{\"namespace\": \"example.avro\", \"type\": \"record\", \"name\": \"simple\", \"fields\": \
     [{\"name\": \"name\", \"type\": \"string\"}]}", "records": [{"value": {"name": "name0"}}]}' http://localhost:8082/topics/my_topic
 
-Create a consumer::
+Create a consumer with consumer group 'avro_consumers' and consumer instance 'my_consumer' ::
 
   $ curl -X POST -H "Content-Type: application/vnd.kafka.v2+json" -H "Accept: application/vnd.kafka.v2+json" \
     --data '{"name": "my_consumer", "format": "avro", "auto.offset.reset": "earliest"}' \
     http://localhost:8082/consumers/avro_consumers
 
-Subscribe to the topic we previously published to::
+Subscribe to the topic we previously created ::
 
   $ curl -X POST -H "Content-Type: application/vnd.kafka.v2+json" --data '{"topics":["my_topic"]}' \
     http://localhost:8082/consumers/avro_consumers/instances/my_consumer/subscription
 
-Consume previously published message::
+Consume previously produced message::
 
   $ curl -X GET -H "Accept: application/vnd.kafka.avro.v2+json" \
     http://localhost:8082/consumers/avro_consumers/instances/my_consumer/records?timeout=1000
@@ -418,6 +488,12 @@ Keys to take special care are the ones needed to configure Kafka and advertised_
    * - ``server_tls_keyfile``
      - ``/path/to/keyfile``
      - Filename to a private key for the Karapace server in HTTPS mode.
+   * - ``server_tls_cafile``
+     - ``/path/to/cafile``
+     - Filename to the SSL CA certificate.
+   * - ``registry_scheme``
+     - ``http``
+     - Schema Registry scheme to use for rest-proxy, http | https (if certificates are provided).
    * - ``registry_host``
      - ``127.0.0.1``
      - Schema Registry host, used by Kafka Rest for schema related requests.
@@ -521,7 +597,7 @@ Each user entry contains following attributes:
    * - ``password_hash``
      - Hash string of the password calculated using given algorithm and salt.
 
-Password hashing can be done using ``karapace_mkpasswd`` tool, if installed, or by invoking directly with ``python -m karapace.auth``. The tool generates JSON entry with these fields. ::
+Password hashing can be done using ``karapace_mkpasswd`` tool, if installed, or by invoking directly with ``python -m karapace.core.auth``. The tool generates JSON entry with these fields. ::
 
   $ karapace_mkpasswd -u user -a sha512 secret
   {
@@ -596,16 +672,93 @@ Example of complete authorization file
         ]
     }
 
-Karapace Schema Registry access to the schemas topic
+Karapace Schema Registry access to the _schemas topic
 ====================================================
 
-The principal used by the Karapace Schema Registry has to have adequate access to the schemas topic (see the ``topic_name`` configuration option above).
+The principal used by the Karapace Schema Registry has to have adequate access to the _schemas topic (see the ``topic_name`` configuration option above).
 In addition to what is required to access the topic, as described in the Confluent Schema Registry documentation_, the unique, single-member consumer group
 used by consumers in the schema registry needs ``Describe`` and ``Read`` permissions_ on the group.
 These unique (per instance of the schema registry) consumer group names are prefixed by ``karapace-autogenerated-``, followed by a random string.
 
 .. _`documentation`: https://docs.confluent.io/platform/current/schema-registry/security/index.html#authorizing-access-to-the-schemas-topic
 .. _`permissions`: https://docs.confluent.io/platform/current/kafka/authorization.html#group-resource-type-operations
+
+OAuth2 authentication and authorization of Karapace
+===================================================
+
+Karapace supports OAuth2 authentication and authorization. The JSON Web Token (JWT) is extracted from the ``Authorization`` HTTP header if the authorization scheme is ``Bearer``,
+eg. ``Authorization: Bearer $JWT``. If a ``Bearer`` token is present in schema registry requests, karapace will validate the token against OpenId connect provider and continue.
+
+Below here is an example of karapace OpenId connect config ::
+
+   sasl_oauthbearer_jwks_endpoint_url = "http://localhost:8383/realms/karapace/protocol/openid-connect/certs",
+   sasl_oauthbearer_expected_issuer = "http://localhost:8383/realms/karapace",
+   sasl_oauthbearer_expected_audience = "account",
+   sasl_oauthbearer_sub_claim_name = "sub",
+
+  For authorization::
+
+   sasl_oauthbearer_authorization_enabled: bool = False
+   sasl_oauthbearer_client_id: str | None = None
+   sasl_oauthbearer_roles_claim_path: str | None = None
+   sasl_oauthbearer_method_roles: dict[str, list[str]] = {"GET": [], "POST": [], "PUT": [], "DELETE": []}
+
+
+Below here is an example of karapace OpenId connect docker config ::
+
+    KARAPACE_SASL_OAUTHBEARER_JWKS_ENDPOINT_URL: http://keycloak:8080/realms/karapace/protocol/openid-connect/certs
+    KARAPACE_SASL_OAUTHBEARER_EXPECTED_ISSUER: http://keycloak:8080/realms/karapace
+    KARAPACE_SASL_OAUTHBEARER_EXPECTED_AUDIENCE: "account"
+    KARAPACE_SASL_OAUTHBEARER_SUB_CLAIM_NAME: sub
+
+  For authorization, example config::
+
+  KARAPACE_SASL_OAUTHBEARER_AUTHORIZATION_ENABLED: True
+  KARAPACE_SASL_OAUTHBEARER_CLIENT_ID: "karapace"
+  KARAPACE_SASL_OAUTHBEARER_ROLES_CLAIM_PATH: "resource_access.[client_id].roles"
+  KARAPACE_SASL_OAUTHBEARER_METHOD_ROLES: dict[str, list[str]] = {"GET": ["schema:read", "subject:read"],
+                                                           "POST": ["schema:write", "subject:write"], "PUT": [], "DELETE": []}
+
+
+Testing the authentication and authorization with docker
+--------------------------------------------------------
+
+Get token
+---------
+
+If you are running with docker, login to karapace container with ::
+
+  docker exec -it containerid /bin/sh
+
+and get a token like below. ::
+
+  curl -s -X POST "http://keycloak:8080/realms/karapace/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials" \
+  -d "client_id=karapace-client" \
+  -d "client_secret=client-secret" \
+
+Note : client id and client secret can be retrieved from Oidc provider
+
+Response of the above curl should be a access token, and other scope and expiry details.
+Export the token into ACCESS_TOKEN variable::
+
+  export ACCESS_TOKEN='token..'
+
+Access schema registry
+----------------------
+Send the token to get subjects url::
+
+  curl --insecure -H "Authorization: Bearer $ACCESS_TOKEN" https://localhost:8081/subjects/testtopic-value/versions
+
+Response should be list of available subjects, as it is a valid token, and GET (schema read, subject read) is allowed as per the defined method roles.
+
+Send an invalid token to get subjects url::
+
+  curl --insecure -H "Authorization: Bearer aninvalidtoken" https://localhost:8081/subjects
+
+Response should be {"error":"Unauthorized","reason":"Invalid token/payload"}
+
 
 OAuth2 authentication and authorization of Karapace REST proxy
 ===================================================================
@@ -644,7 +797,7 @@ In that view the future extension of the normalization process isn't considered 
 Uninstall
 =========
 
-To unistall Karapace from the system you can follow the instructions described below. We would love to hear your reasons for uninstalling though. Please file an issue if you experience any problems or email us_ with feedback
+To uninstall Karapace from the system, you can follow the instructions described below. We would love to hear your reasons for uninstalling though. Please file an issue if you experience any problems or email us_ with feedback
 
 .. _`us`: mailto:opensource@aiven.io
 
