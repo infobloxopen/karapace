@@ -1,4 +1,4 @@
-#!/bin/dash
+#!/bin/sh
 set -e
 
 # Configuration is done using environment variables. The environment variable

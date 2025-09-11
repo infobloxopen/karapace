@@ -5,7 +5,7 @@ pipeline {
     label 'ubuntu_20_04_label'
   }
   tools {
-    go "Go 1.22.4"
+    go "Go 1.24.6"
   }
   options {
     checkoutToSubdirectory('src/github.com/infobloxopen/karapace')

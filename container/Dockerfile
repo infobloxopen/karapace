@@ -1,61 +1,66 @@
-# Use Photon OS as the base image
+# Build stage
 FROM photon:latest AS builder
 
 ARG KARAPACE_VERSION
 
-# Install Python and other dependencies
+# Install Python and other dependencies (without python3-virtualenv to avoid system package)
 RUN tdnf -y update && tdnf -y install \
     python3 \
-    python3-virtualenv \
     python3-pip \
+    python3-xml \
+    expat-devel \
     wget \
     gcc \
     make \
-    openssl-devel \
-    cyrus-sasl-devel \
-    diffutils \
-    tar \
     glibc-devel \
+    zlib-devel \
+    openssl-devel \
+    libffi-devel \
     linux-api-headers \
-    binutils
+    binutils \
+    && tdnf clean all
 
-# Create, activate, and enforce usage of virtualenv.
+# Install virtualenv directly via pip to avoid system package vulnerabilities
+RUN pip3 install virtualenv>=20.26.6
+
+# Create, activate, and enforce usage of virtualenv with secure versions
 RUN python3 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 ENV PIP_REQUIRE_VIRTUALENV=true
 
+# Upgrade setuptools and virtualenv to latest secure versions in venv
+RUN pip install --upgrade setuptools>=78.1.1 virtualenv>=20.26.6
+
+# Remove any system-level python packages that might have vulnerabilities
+RUN tdnf -y remove python3-setuptools python3-virtualenv || true
+
 # Install Go
-ENV GO_VERSION=1.23.8
+ENV GO_VERSION=1.24.6
 ENV PATH="/usr/local/go/bin:${PATH}"
 RUN ARCH=$(uname -m) \
  && [ "$ARCH" = "aarch64" ] && ARCH="arm64" || true \
  && [ "$ARCH" = "x86_64" ] && ARCH="amd64" || true \
- && wget "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
- && tar -C /usr/local -xzf "go${GO_VERSION}.linux-${ARCH}.tar.gz" \
- && rm "go${GO_VERSION}.linux-${ARCH}.tar.gz"
+ && wget -q "https://golang.org/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" -O /tmp/go.tar.gz \
+ && tar -C /usr/local -xzf /tmp/go.tar.gz \
+ && rm /tmp/go.tar.gz
 
-# Install librdkafka from source
-RUN wget https://github.com/edenhill/librdkafka/archive/refs/tags/v2.8.0.tar.gz \
- && tar -xzf v2.8.0.tar.gz \
- && cd librdkafka-2.8.0 \
- && ./configure \
- && make \
- && make install \
- && cd .. \
- && rm -rf librdkafka-2.8.0 v2.8.0.tar.gz
-
-# Copy the requirements.txt and install dependencies in venv. Using a separate
-# command to use layer caching.
-#
-# Note: the requirements.txt is pinned, if any of the dependencies is updated
-# the cache will be invalidated and the image regenerated, which is the
-# intended behavior.
-COPY ./requirements/requirements.txt /build/
+# COPY requirements.txt before other files to maximize Docker layer cache efficiency
+COPY requirements/requirements*.txt /tmp/
 RUN --mount=type=cache,target=/root/.cache/pip \
-    python3 -m pip install -r /build/requirements.txt
+    pip install \
+        -r /tmp/requirements.txt \
+        -r /tmp/requirements-typing.txt
+
+# Install gunicorn separately to avoid conflicts
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install gunicorn
 
 COPY . /build/karapace-repo
 WORKDIR /build/karapace-repo
+
+# Sync vendor directory to fix Go mod inconsistencies
+RUN cd go/protopace && go mod tidy && go mod vendor
+
 RUN --mount=type=cache,target=/root/.cache/pip \
     if [ -z "${KARAPACE_VERSION}" ]; then \
         PRETEND_VERSION="$(python -c 'from src.karapace import version; print(version.__version__)')"; \
@@ -64,52 +69,40 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     fi; \
     SETUPTOOLS_SCM_PRETEND_VERSION=$PRETEND_VERSION python3 -m pip install --no-deps .
 
-# Karapace image, i.e. production.
+# Karapace image, i.e. production
 FROM photon:latest AS karapace
 
-# Install Python 3 and other dependencies
+# Install minimal runtime dependencies
 RUN tdnf -y update && tdnf -y install \
     python3 \
-    python3-virtualenv \
     python3-pip \
-    gcc \
-    gdb \
-    shadow \
-    glibc-devel \
-    linux-api-headers \
-    binutils \
+    libffi \
+    openssl \
+    librdkafka \
+    shadow-tools \
     && tdnf clean all
 
-# Need to be root to install packages.
-USER 0
-
-# Setup user and directories.
-# https://docs.redhat.com/en/documentation/openshift_container_platform/4.17/html/images/creating-images#use-uid_create-images
-RUN useradd --uid 1000 --gid root karapace \
- && mkdir -p /opt/karapace /opt/karapace/runtime /var/log/karapace \
- && chgrp -R 0 /opt/karapace /opt/karapace/runtime /var/log/karapace \
- && chmod -R g+rwX /opt/karapace
-
-# Install protobuf compiler.
-ARG PROTOBUF_COMPILER_VERSION="3.12.4"
-RUN tdnf -y update \
- && tdnf -y install \
-    protobuf-c \
-    gcc \
-    && tdnf clean all
-
-# Copy virtualenv from builder and activate it.
+# Copy virtualenv from builder and activate it
 COPY --from=builder /venv /venv
 ENV PATH="/venv/bin:$PATH"
 
-COPY ./container/start.sh /opt/karapace
-RUN chmod 550 /opt/karapace/start.sh \
- && chgrp -R 0  /opt/karapace/start.sh
+# Setup user and directories (OpenShift compatible)
+# Using gid root for OpenShift compatibility while maintaining security
+RUN useradd -m -u 1000 -g root karapace && \
+    mkdir -p /opt/karapace /opt/karapace/runtime /var/log/karapace && \
+    chgrp -R 0 /opt/karapace /var/log/karapace && \
+    chmod -R g+rwX /opt/karapace /var/log/karapace
 
-COPY ./container/healthcheck.py /opt/karapace
+COPY ./container/start.sh /opt/karapace/
+COPY ./container/healthcheck.py /opt/karapace/
+
+RUN chmod 550 /opt/karapace/start.sh && \
+    chmod 644 /opt/karapace/healthcheck.py && \
+    chgrp 0 /opt/karapace/start.sh /opt/karapace/healthcheck.py && \
+    chmod g+r /opt/karapace/start.sh /opt/karapace/healthcheck.py
 
 WORKDIR /opt/karapace
 USER karapace
 
 HEALTHCHECK --interval=10s --timeout=30s --retries=3 --start-period=60s \
-    CMD python3 healthcheck.py http://localhost:$KARAPACE_PORT/_health || exit 1
+    CMD python3 healthcheck.py http://localhost:${KARAPACE_PORT:-8081}/_health || exit 1

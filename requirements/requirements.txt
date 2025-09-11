@@ -6,15 +6,15 @@
 #
 accept-types==0.4.1
     # via karapace (/karapace/pyproject.toml)
-aiohappyeyeballs==2.4.0
+aiohappyeyeballs==2.5.0
     # via aiohttp
-aiohttp==3.10.11
+aiohttp==3.12.14
     # via karapace (/karapace/pyproject.toml)
 aiokafka==0.10.0
     # via karapace (/karapace/pyproject.toml)
-aiosignal==1.3.1
+aiosignal==1.4.0
     # via aiohttp
-anyio==4.4.0
+anyio==4.5.0
     # via watchfiles
 async-timeout==4.0.3
     # via
@@ -31,15 +31,15 @@ cachetools==5.3.3
     # via karapace (/karapace/pyproject.toml)
 confluent-kafka==2.8.0
     # via karapace (/karapace/pyproject.toml)
-cramjam==2.8.3
+cramjam==2.8.4
     # via python-snappy
 exceptiongroup==1.2.2
     # via anyio
-frozenlist==1.4.1
+frozenlist==1.5.0
     # via
     #   aiohttp
     #   aiosignal
-idna==3.8
+idna==3.10
     # via
     #   anyio
     #   yarl
@@ -55,7 +55,7 @@ markdown-it-py==3.0.0
     # via rich
 mdurl==0.1.2
     # via markdown-it-py
-multidict==6.0.5
+multidict==6.1.0
     # via
     #   aiohttp
     #   yarl
@@ -65,7 +65,7 @@ packaging==24.1
     # via aiokafka
 prometheus-client==0.20.0
     # via karapace (/karapace/pyproject.toml)
-protobuf==3.20.3
+protobuf==4.25.8
     # via karapace (/karapace/pyproject.toml)
 pygments==2.18.0
     # via rich
@@ -73,7 +73,7 @@ pyjwt==2.9.0
     # via karapace (/karapace/pyproject.toml)
 python-dateutil==2.9.0.post0
     # via karapace (/karapace/pyproject.toml)
-python-snappy==0.7.2
+python-snappy==0.7.3
     # via karapace (/karapace/pyproject.toml)
 referencing==0.35.1
     # via
@@ -99,11 +99,11 @@ typing-extensions==4.12.2
     #   karapace (/karapace/pyproject.toml)
 ujson==5.10.0
     # via karapace (/karapace/pyproject.toml)
-watchfiles==0.23.0
+watchfiles==0.24.0
     # via karapace (/karapace/pyproject.toml)
 xxhash==3.5.0
     # via karapace (/karapace/pyproject.toml)
-yarl==1.12.1
+yarl==1.17.0
     # via
     #   aiohttp
     #   karapace (/karapace/pyproject.toml)
