@@ -1,4 +1,4 @@
-module github.com/Infoblox-CTO/karapace/go/protopace
+module github.com/Aiven-Open/karapace/go/protopace
 
 go 1.24.6
 
