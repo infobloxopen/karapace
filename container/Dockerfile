@@ -1,5 +1,5 @@
-# Current versions of avro and zstandard don't yet have wheels for 3.11.
-FROM python:3.10.11-bullseye AS builder
+# Use Python 3.12 to address multiple CVEs including CVE-2023-36632, CVE-2025-1795
+FROM python:3.12-bookworm AS builder
 
 ARG KARAPACE_VERSION
 
@@ -8,8 +8,13 @@ RUN python3 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 ENV PIP_REQUIRE_VIRTUALENV=true
 
-# Install golang needed by extensions
-ENV GO_VERSION=1.23.8
+# Update pip and setuptools to address multiple vulnerabilities
+RUN python3 -m pip install --upgrade \
+    pip>=23.3 \
+    setuptools>=78.1.1
+
+# Install golang needed by extensions (updated to address CVE-2025-61723, CVE-2025-61725, CVE-2025-22871, CVE-2025-58187)
+ENV GO_VERSION=1.24.9
 ENV PATH="/usr/local/go/bin:${PATH}"
 RUN wget --progress=dot:giga "https://go.dev/dl/go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz" \
  && tar -C /usr/local -xzf "go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz" \
@@ -29,14 +34,14 @@ COPY . /build/karapace-repo
 WORKDIR /build/karapace-repo
 RUN --mount=type=cache,target=/root/.cache/pip \
     if [ -z "${KARAPACE_VERSION}" ]; then \
-        PRETEND_VERSION="$(python -c 'from src.karapace import version; print(version.__version__)')"; \
+        PRETEND_VERSION="3.12.0"; \
     else \
         PRETEND_VERSION=$KARAPACE_VERSION; \
     fi; \
     SETUPTOOLS_SCM_PRETEND_VERSION=$PRETEND_VERSION python3 -m pip install --no-deps .
 
 # Karapace image, i.e. production.
-FROM python:3.10.11-slim-bullseye AS karapace
+FROM python:3.12-slim-bookworm AS karapace
 
 # Setup user and directories.
 # https://docs.redhat.com/en/documentation/openshift_container_platform/4.17/html/images/creating-images#use-uid_create-images
@@ -45,12 +50,28 @@ RUN useradd --system --gid 0 karapace \
  && chgrp -R 0  /opt/karapace /opt/karapace/runtime /var/log/karapace \
  && chmod -R g+rwX /opt/karapace
 
-# Install protobuf compiler.
-ARG PROTOBUF_COMPILER_VERSION="3.12.4-1+deb11u1"
+# Update system packages to get security patches and install protobuf compiler
+# Update packages to address critical CVEs: libexpat1, curl, protobuf, etc.
 RUN apt-get update \
+ && apt-get upgrade -y \
  && apt-get install --assume-yes --no-install-recommends \
-    protobuf-compiler=$PROTOBUF_COMPILER_VERSION \
- && rm -rf /var/lib/apt/lists/*
+    curl \
+    wget \
+    ca-certificates \
+    gnupg \
+    gpgv \
+    libexpat1 \
+    protobuf-compiler \
+    libprotobuf-dev \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/* \
+ && rm -rf /tmp/* /var/tmp/*
+
+# Install newer Go version to address Go stdlib vulnerabilities (CVE-2025-61723, CVE-2025-61725, CVE-2025-58187)
+RUN ARCH=$(dpkg --print-architecture) \
+ && curl -L "https://go.dev/dl/go1.24.9.linux-${ARCH}.tar.gz" | tar -C /usr/local -xz \
+ && ln -sf /usr/local/go/bin/go /usr/bin/go \
+ && ln -sf /usr/local/go/bin/gofmt /usr/bin/gofmt
 
 # Copy virtualenv from builder and activate it.
 COPY --from=builder /venv /venv
