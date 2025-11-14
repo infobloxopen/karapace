@@ -7,11 +7,10 @@ PYTHON_VERSION ?= 3.10
 
 define PIN_VERSIONS_COMMAND
 pip install pip-tools && \
-	python -m piptools compile -o /karapace/requirements/requirements.txt /karapace/pyproject.toml && \
-	python -m piptools compile --extra dev -o /karapace/requirements/requirements-dev.txt /karapace/pyproject.toml && \
-	python -m piptools compile --extra typing -o /karapace/requirements/requirements-typing.txt /karapace/pyproject.toml
+	python -m piptools compile --upgrade -o /karapace/requirements/requirements.txt /karapace/pyproject.toml && \
+	python -m piptools compile --upgrade --extra dev -o /karapace/requirements/requirements-dev.txt /karapace/pyproject.toml && \
+	python -m piptools compile --upgrade --extra typing -o /karapace/requirements/requirements-typing.txt /karapace/pyproject.toml
 endef
-
 
 export PATH   := $(VENV_DIR)/bin:$(PATH)
 export PS4    := \e[0m\e[32m==> \e[0m
@@ -70,7 +69,7 @@ unit-tests: venv/.deps-dev
 	rm -fr runtime/*
 
 .PHONY: integration-tests
-unit-tests: export PYTEST_ARGS ?=
+integration-tests: export PYTEST_ARGS ?=
 integration-tests: venv/.deps-dev
 	rm -fr runtime/*
 	$(PYTHON) -m pytest -s -vvv $(PYTEST_ARGS) tests/integration/

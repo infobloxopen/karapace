@@ -2,23 +2,31 @@
 Copyright (c) 2024 Aiven Ltd
 See LICENSE for details
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
-from confluent_kafka.cimpl import KafkaError
-from karapace.config import DEFAULTS
-from karapace.constants import DEFAULT_SCHEMA_TOPIC
-from karapace.in_memory_database import InMemoryDatabase, KarapaceDatabase, Subject, SubjectData
-from karapace.kafka.types import Timestamp
-from karapace.key_format import KeyFormatter
-from karapace.offset_watcher import OffsetWatcher
-from karapace.schema_models import SchemaVersion, TypedSchema
-from karapace.schema_reader import KafkaSchemaReader
-from karapace.schema_references import Reference, Referents
-from karapace.typing import SchemaId, Version
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
+from unittest.mock import Mock
+from karapace.core.stats import StatsClient
+
+import pytest
+from confluent_kafka.cimpl import KafkaError
+
+from karapace.core.constants import DEFAULT_SCHEMA_TOPIC
+from karapace.core.container import KarapaceContainer
+from karapace.core.in_memory_database import InMemoryDatabase, KarapaceDatabase, Subject, SubjectData
+from karapace.core.kafka.types import Timestamp
+from karapace.core.key_format import KeyFormatter
+from karapace.core.offset_watcher import OffsetWatcher
+from karapace.core.protobuf.schema import ProtobufSchema
+from karapace.core.schema_models import SchemaVersion, TypedSchema
+from karapace.core.schema_reader import KafkaSchemaReader
+from karapace.core.schema_references import Reference, Referents
+from karapace.core.schema_type import SchemaType
+from karapace.core.typing import SchemaId, Version
 
 TEST_DATA_FOLDER: Final = Path("tests/unit/test_data/")
 
@@ -176,14 +184,8 @@ class WrappedInMemoryDatabase(KarapaceDatabase):
     def num_schema_versions(self) -> tuple[int, int]:
         return self.db.num_schema_versions()
 
-    def insert_referenced_by(self, *, subject: Subject, version: Version, schema_id: SchemaId) -> None:
-        return self.db.insert_referenced_by(subject=subject, version=version, schema_id=schema_id)
-
     def get_referenced_by(self, subject: Subject, version: Version) -> Referents | None:
         return self.db.get_referenced_by(subject=subject, version=version)
-
-    def remove_referenced_by(self, schema_id: SchemaId, references: Iterable[Reference]) -> None:
-        return self.db.remove_referenced_by(schema_id=schema_id, references=references)
 
     def duplicates(self) -> dict[SchemaId, list[tuple[Subject, TypedSchema]]]:
         duplicate_data = defaultdict(list)
@@ -214,7 +216,7 @@ def compute_schema_id_to_subjects(
     return schema_id_to_duplicated_subjects
 
 
-def test_can_ingest_schemas_from_log() -> None:
+def test_can_ingest_schemas_from_log(karapace_container: KarapaceContainer) -> None:
     """
     Test for the consistency of a backup, this checks that each SchemaID its unique in the backup.
     The format of the log its the one obtained by running:
@@ -223,16 +225,18 @@ def test_can_ingest_schemas_from_log() -> None:
 
     on a node running kafka that hosts the `_schemas` topic.
     """
+    stats_mock = Mock(spec=StatsClient)
     restore_location = TEST_DATA_FOLDER / "schemas.log"
     schema_log = restore_location.read_text(encoding="utf-8").strip()
 
     database = WrappedInMemoryDatabase()
     schema_reader = KafkaSchemaReader(
-        config=DEFAULTS,
+        config=karapace_container.config(),
         offset_watcher=OffsetWatcher(),
         key_formatter=KeyFormatter(),
         master_coordinator=None,
         database=database,
+        stats=stats_mock,
     )
 
     kafka_messages: list[AlwaysFineKafkaMessage] = []
@@ -259,3 +263,77 @@ def test_can_ingest_schemas_from_log() -> None:
     schema_id_to_duplicated_subjects = compute_schema_id_to_subjects(duplicates, database.subject_to_subject_data())
     assert schema_id_to_duplicated_subjects == {}, "there shouldn't be any duplicated schemas"
     assert duplicates == {}, "the schema database is broken. The id should be unique"
+
+
+@pytest.fixture(name="db_with_schemas")
+def fixture_in_memory_database_with_schemas() -> InMemoryDatabase:
+    db = InMemoryDatabase()
+    schema_str = "syntax = 'proto3'; message Test { string test = 1; }"
+
+    subject_a = Subject("subject_a")
+    schema_a = TypedSchema(
+        schema_type=SchemaType.PROTOBUF,
+        schema_str=schema_str,
+        schema=ProtobufSchema(schema=schema_str),
+    )
+    db.insert_subject(subject=subject_a)
+    schema_id_a = db.get_schema_id(schema_a)
+    db.insert_schema_version(
+        subject=subject_a, schema_id=schema_id_a, version=Version(1), schema=schema_a, deleted=False, references=None
+    )
+    db.insert_schema_version(
+        subject=subject_a, schema_id=schema_id_a, version=Version(2), schema=schema_a, deleted=False, references=None
+    )
+
+    subject_b = Subject("subject_b")
+    references_b = [Reference(name="test", subject=subject_a, version=Version(1))]
+    schema_b = TypedSchema(
+        schema_type=SchemaType.PROTOBUF,
+        schema_str=schema_str,
+        schema=ProtobufSchema(schema=schema_str),
+        references=references_b,
+    )
+    db.insert_subject(subject=subject_b)
+    schema_id_b = db.get_schema_id(schema_b)
+    db.insert_schema_version(
+        subject=subject_b,
+        schema_id=schema_id_b,
+        version=Version(1),
+        schema=schema_b,
+        deleted=False,
+        references=references_b,
+    )
+
+    return db
+
+
+def test_delete_schema_references(db_with_schemas: InMemoryDatabase) -> None:
+    # Check that the schema is referenced by subject_b
+    referents = db_with_schemas.get_referenced_by(subject=Subject("subject_a"), version=Version(1))
+    assert referents is not None
+    version = db_with_schemas.find_schema_versions_by_schema_id(schema_id=referents.pop(), include_deleted=False)[0]
+    assert version.subject == Subject("subject_b")
+    assert version.version == Version(1)
+
+    # Delete the schema from subject_b
+    db_with_schemas.delete_subject_schema(subject=Subject("subject_b"), version=Version(1))
+
+    # Check that the schema is no longer referenced by subject_b
+    referents = db_with_schemas.get_referenced_by(subject=Subject("subject_a"), version=Version(1))
+    assert len(referents) == 0, "referents should be gone after deleting the schema"
+
+
+def test_delete_subject(db_with_schemas: InMemoryDatabase) -> None:
+    # Check that the schema is referenced by subject_b
+    referents = db_with_schemas.get_referenced_by(subject=Subject("subject_a"), version=Version(1))
+    assert referents is not None
+    version = db_with_schemas.find_schema_versions_by_schema_id(schema_id=referents.pop(), include_deleted=False)[0]
+    assert version.subject == Subject("subject_b")
+    assert version.version == Version(1)
+
+    # Hard delete subject_b
+    db_with_schemas.delete_subject_hard(subject=Subject("subject_b"))
+
+    # Check that the schema is no longer referenced by subject_b
+    referents = db_with_schemas.get_referenced_by(subject=Subject("subject_a"), version=Version(1))
+    assert len(referents) == 0, "referents should be gone after hard deleting the subject"

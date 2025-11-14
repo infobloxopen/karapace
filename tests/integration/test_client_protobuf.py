@@ -2,9 +2,10 @@
 Copyright (c) 2023 Aiven Ltd
 See LICENSE for details
 """
-from karapace.protobuf.kotlin_wrapper import trim_margin
-from karapace.schema_models import SchemaType, ValidatedTypedSchema
-from karapace.serialization import SchemaRegistryClient
+
+from karapace.core.protobuf.kotlin_wrapper import trim_margin
+from karapace.core.schema_models import SchemaType, ValidatedTypedSchema
+from karapace.core.serialization import SchemaRegistryClient
 from tests.schemas.protobuf import schema_protobuf_order_after, schema_protobuf_order_before, schema_protobuf_plain
 from tests.utils import new_random_name
 
@@ -18,6 +19,12 @@ async def test_remote_client_protobuf(registry_async_client):
     assert sc_id >= 0
     stored_schema, _ = await reg_cli.get_schema_for_id(sc_id)
     assert stored_schema == schema_protobuf, f"stored schema {stored_schema} is not {schema_protobuf}"
+
+    stored_id, stored_schema, _ = await reg_cli.get_schema(subject)
+    assert stored_id == sc_id
+    assert stored_schema == schema_protobuf
+
+    # get same schema a second time to hit cache
     stored_id, stored_schema, _ = await reg_cli.get_schema(subject)
     assert stored_id == sc_id
     assert stored_schema == schema_protobuf
